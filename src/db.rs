@@ -239,6 +239,40 @@ impl DatastoreClient {
             Err(e) => Err(Error::DatabaseResponse(e)),
         }
     }
+    pub fn list<T: DeserializeOwned + EntityKey, K: ToString>(&self) -> Result<Vec<T>, Error> {
+        let kind_key = T::entity_kind_key();
+        let req = google_datastore1::LookupRequest {
+            keys: Some(vec![
+                google_datastore1::Key {
+                    path: Some(vec![
+                        google_datastore1::PathElement {
+                            kind: Some(kind_key),
+                            name: None,
+                            id: None
+                        }
+                    ]),
+                    partition_id: None
+                }]),
+            read_options: None
+        };
+        let result = self.handle
+            .projects()
+            .lookup(req, &self.project_id)
+            .doit();
+        match result {
+            Ok((_, lookup_response)) => {
+                let payload = lookup_response.found
+                    .and_then(|entities| {
+                        Some(entities.into_iter().filter_map(|x| x.entity)
+                        .filter_map(|x| convert::from_datastore_entity(x.clone()))
+                        .collect::<Vec<T>>())
+                    })
+                    .ok_or(Error::NoPayload)?;
+                    Ok(payload)
+            }
+            Err(e) => Err(Error::DatabaseResponse(e)),
+        }
+    }
     pub fn delete<T: EntityKey, K: ToString>(&self, name_key: K) -> Result<(), Error> {
         let kind_key = T::entity_kind_key();
         let name_key = name_key.to_string();
