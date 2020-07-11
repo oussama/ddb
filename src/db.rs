@@ -7,6 +7,9 @@ use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use crate::convert;
 use crate::auth;
 
+use google_datastore1::RunQueryRequest;
+
+
 pub use crate::auth::Auth;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -239,29 +242,35 @@ impl DatastoreClient {
             Err(e) => Err(Error::DatabaseResponse(e)),
         }
     }
-    pub fn list<T: DeserializeOwned + EntityKey, K: ToString>(&self) -> Result<Vec<T>, Error> {
+    pub fn list<T: DeserializeOwned + EntityKey>(&self) -> Result<Vec<T>, Error> {
         let kind_key = T::entity_kind_key();
-        let req = google_datastore1::LookupRequest {
-            keys: Some(vec![
-                google_datastore1::Key {
-                    path: Some(vec![
-                        google_datastore1::PathElement {
-                            kind: Some(kind_key),
-                            name: None,
-                            id: None
-                        }
-                    ]),
-                    partition_id: None
-                }]),
-            read_options: None
+        let mut query = RunQueryRequest{
+            query: Some(google_datastore1::Query{
+                start_cursor: None,
+                kind: Some(vec![ google_datastore1::KindExpression { name: Some(kind_key)} ]),
+                projection: None,
+                distinct_on: None,
+                filter: None,
+                limit: None,
+                offset: None,
+                end_cursor:None,
+                order: None,
+            }),
+            partition_id: None,
+            gql_query: None,
+            read_options: None,
         };
+
         let result = self.handle
             .projects()
-            .lookup(req, &self.project_id)
+            //.lookup(req, &self.project_id)
+            .run_query(query, &self.project_id)
             .doit();
+
         match result {
-            Ok((_, lookup_response)) => {
-                let payload = lookup_response.found
+            Ok((_, query_response)) => {
+                let payload = query_response.batch
+                    .and_then(|batch| batch.entity_results )
                     .and_then(|entities| {
                         Some(entities.into_iter().filter_map(|x| x.entity)
                         .filter_map(|x| convert::from_datastore_entity(x.clone()))
